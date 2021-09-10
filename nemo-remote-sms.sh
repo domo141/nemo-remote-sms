@@ -5,7 +5,7 @@
 #	Copyright (c) 2021 Tomi Ollila
 #
 # Created: Sun 22 Aug 2021 13:29:52 EEST too
-# Last modified: Tue 07 Sep 2021 22:46:21 +0300 too
+# Last modified: Fri 10 Sep 2021 07:37:41 +0300 too
 #
 # SPDX-License-Identifier: 0BSD
 
@@ -48,7 +48,7 @@ test ${#msg} -le 400 || die "Message too long (${#msg} > 400)"
 
 msg=$(printf %s "$msg" | sed "s/\(''*\)/'"'"\1"'"'/g")
 
-ssh=${NEMO_REMOTE_SMS_SSH_COMMAND:-ssh} # analogous to GIT_SSH_COMMAND
+ssh=${NEMO_REMOTE_SMS_RSH_COMMAND:-ssh} # like RSYNC_RSH and GIT_SSH_COMMAND
 
 if $arg_test
 then
