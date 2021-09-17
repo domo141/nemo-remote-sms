@@ -5,7 +5,7 @@
 #	Copyright (c) 2021 Tomi Ollila
 #
 # Created: Sun 22 Aug 2021 13:29:52 EEST too
-# Last modified: Fri 10 Sep 2021 07:37:41 +0300 too
+# Last modified: Sat 18 Sep 2021 01:38:14 +0300 too
 #
 # SPDX-License-Identifier: 0BSD
 
@@ -19,10 +19,42 @@ die () { printf '%s\n' "$@"; exit 1; } >&2
 # undocumented test option (and use bash/dash/ksh/zsh -x ... to see more)
 test "${1-}" = -n && { arg_test=true; shift; } || arg_test=false
 
-test $# -ge 3 ||
-	die '' "Usage: ${0##*/} {hostname/ipaddr} [+]{number} {message...}" ''\
-		"Send sms message via nemomobile device ssh connection." \
-		"Message editor on the device is opened for confirmation." ''
+test $# -ge 3 || {
+	exec >&2; echo
+	case ${1-} in 0.[0-9])
+	echo "FIXME: To create ControlPersist execute:"; echo
+	echo "  ${0##*/} $1 time[smhdw] [user@]host [command [args]]"
+	echo; echo "Then normal Usage: ${0##*/} $1 [+]{number} {message...}"
+	echo; echo "See  man sshd_config  for time[smhdw] format."
+;; *)
+	echo "Usage: ${0##*/} {hostname/ipaddr|0.1} [+]{number} {message...}"
+	echo
+	echo "Send sms message via nemomobile device ssh connection."
+	echo "Message editor on the device is opened for confirmation."
+	echo
+	echo "'0.1'..'0.9' -- special ControlPersists -- fixme helep..." ''
+	esac; echo; exit 1
+}
+
+case $1 in 0.[0-9])
+	test "${XDG_RUNTIME_DIR-}" || die "'XDG_RUNTIME_DIR' not in env"
+	test -d "$XDG_RUNTIME_DIR" || die "'$XDG_RUNTIME_DIR': no such directory"
+	so=-oControlPath=$XDG_RUNTIME_DIR/ssh-controlpath-nemo@$1
+	case $2 in *[!0-9]*[smhdw]) # not
+		;; [1-9]*[smhdw])
+			ssh $so -O check $1 && exit 0
+			so=$so\ -M\ -oControlPersist=$2
+			case $3 in *@*) userathost=$3
+				;; *) userathost=nemo@$3
+			esac
+			shift 3
+			test $# = 0 && set -- echo ok
+			echo ssh $so $userathost "$@" >&2
+			exec ssh $so $userathost "$@"
+			exit not reached
+	esac
+	;; *) so=
+esac
 
 case $1 in *@*) userathost=$1
 	;; *) userathost=nemo@$1
@@ -64,13 +96,13 @@ fi
 # ssh concatenates command line and uses shell to execute it.
 
 #printf %s\\n \
-exec $ssh $userathost $exec dbus-send --type=method_call --print-reply \
+exec $ssh $so $userathost $exec dbus-send --type=method_call --print-reply \
 	--dest=org.nemomobile.qmlmessages \
 	/ org.nemomobile.qmlmessages.startSMS array:string:$num string:"'$msg'"
 
 exit # -- exit here (if not above) -- the following code NOT REACHED -- #
 
 printf %s\\n \
-exec $ssh $userathost $exec devel-su dbus-send --system --print-reply \
+exec $ssh $so $userathost $exec devel-su dbus-send --system --print-reply \
 	--dest=org.ofono /ril_0 org.ofono.MessageManager.SendMessage \
 	string:$num string:"'$msg'"
