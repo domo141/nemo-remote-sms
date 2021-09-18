@@ -77,7 +77,7 @@ _cmd_sms () #         send sms msg
 	fi
 }
 
-_cmd_sshpersist () #  create ControlPersist -- openssl-compatible...
+_cmd_sshpersist () #  create ControlPersist -- openssh-compatible...
 {
 	test "$#" -gt 0 || set -- nemo@$rhost exit
 

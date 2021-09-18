@@ -5,7 +5,7 @@
 #	Copyright (c) 2021 Tomi Ollila
 #
 # Created: Sun 22 Aug 2021 13:29:52 EEST too
-# Last modified: Sat 18 Sep 2021 01:38:14 +0300 too
+# Last modified: Sat 18 Sep 2021 22:59:34 +0300 too
 #
 # SPDX-License-Identifier: 0BSD
 
@@ -19,46 +19,66 @@ die () { printf '%s\n' "$@"; exit 1; } >&2
 # undocumented test option (and use bash/dash/ksh/zsh -x ... to see more)
 test "${1-}" = -n && { arg_test=true; shift; } || arg_test=false
 
+# hmm, since last time i tried this, iirc things worked differently --
+# `ssh 0.1` failed immediately if no control socket but now ssh to 0.0.0.1
+# is tried. also w/ just `ssh 1` 0.0.0.1 is tried (which is convenient!)
+# -- so this code now allows e.g 1-99999, 0.1-0.99999 ...
+za () {
+	case $1 in ( '' | . | *[!.0-9]* | 0.??????* ) return 1
+		;; ( 0.[1-9]* ) ;; ( [1-9]*.* | ??????* ) return 1
+	esac
+	return 0
+}
+
 test $# -ge 3 || {
 	exec >&2; echo
-	case ${1-} in 0.[0-9])
+	if za "${1-}"
+	then
 	echo "FIXME: To create ControlPersist execute:"; echo
 	echo "  ${0##*/} $1 time[smhdw] [user@]host [command [args]]"
 	echo; echo "Then normal Usage: ${0##*/} $1 [+]{number} {message...}"
 	echo; echo "See  man sshd_config  for time[smhdw] format."
-;; *)
-	echo "Usage: ${0##*/} {hostname/ipaddr|0.1} [+]{number} {message...}"
+	else
+	echo "Usage: ${0##*/} {hostname/ipaddr|0.1|1} [+]{number} {message...}"
 	echo
 	echo "Send sms message via nemomobile device ssh connection."
 	echo "Message editor on the device is opened for confirmation."
 	echo
-	echo "'0.1'..'0.9' -- special ControlPersists -- fixme helep..." ''
-	esac; echo; exit 1
+	echo "'1','0.1'...: special ControlPersists -- fixme helep..." ''
+	fi; echo; exit 1
 }
 
-case $1 in 0.[0-9])
-	test "${XDG_RUNTIME_DIR-}" || die "'XDG_RUNTIME_DIR' not in env"
-	test -d "$XDG_RUNTIME_DIR" || die "'$XDG_RUNTIME_DIR': no such directory"
-	so=-oControlPath=$XDG_RUNTIME_DIR/ssh-controlpath-nemo@$1
-	case $2 in *[!0-9]*[smhdw]) # not
+# better configure ControlPath in ~/.ssh/config, but if not outcomment 2nd line
+so=
+#so=-oControlPath=$XDG_RUNTIME_DIR/ssh-controlpath-%r@%h:%p
+
+if za "$1"
+then	case $2 in *[!0-9]*[smhdw]) # not
 		;; [1-9]*[smhdw])
-			ssh $so -O check $1 && exit 0
-			so=$so\ -M\ -oControlPersist=$2
+			z=`ssh $so -O check "$1" 2>&1` && { echo $z;exit 0; } ||
+			case $z in 'No ControlPath specified'*)
+				echo $z
+				exit 1
+			esac
+			z=${z%)*}; z=${z#*\(}
+			test -e "$z" && rm "$z"
+			so=-oControlPath=$z\ -M\ -oControlPersist=$2
 			case $3 in *@*) userathost=$3
 				;; *) userathost=nemo@$3
 			esac
-			shift 3
-			test $# = 0 && set -- echo ok
+			i=$1; shift 3
+			test $# = 0 && set -- echo ": ok ';' ssh $i"
 			echo ssh $so $userathost "$@" >&2
 			exec ssh $so $userathost "$@"
 			exit not reached
 	esac
-	;; *) so=
-esac
-
-case $1 in *@*) userathost=$1
-	;; *) userathost=nemo@$1
-esac
+	userathost=$1
+else
+	so=
+	case $1 in *@*) userathost=$1
+		;; *) userathost=nemo@$1
+	esac
+fi
 shift
 
 case $1
