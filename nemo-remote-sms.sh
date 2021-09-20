@@ -5,7 +5,7 @@
 #	Copyright (c) 2021 Tomi Ollila
 #
 # Created: Sun 22 Aug 2021 13:29:52 EEST too
-# Last modified: Sat 18 Sep 2021 22:59:34 +0300 too
+# Last modified: Tue 21 Sep 2021 00:40:00 +0300 too
 #
 # SPDX-License-Identifier: 0BSD
 
@@ -19,10 +19,26 @@ die () { printf '%s\n' "$@"; exit 1; } >&2
 # undocumented test option (and use bash/dash/ksh/zsh -x ... to see more)
 test "${1-}" = -n && { arg_test=true; shift; } || arg_test=false
 
-# hmm, since last time i tried this, iirc things worked differently --
-# `ssh 0.1` failed immediately if no control socket but now ssh to 0.0.0.1
-# is tried. also w/ just `ssh 1` 0.0.0.1 is tried (which is convenient!)
-# -- so this code now allows e.g 1-99999, 0.1-0.99999 ...
+
+# For address block 0.0.0.0/8, rfc6890: Special-Purpose IP Address Registries
+# says it is "This host on this network" address range. It points to rfc 1122:
+# Requirements for Internet Hosts -- Communication Layers section 3.2.1.3
+# which states:  (b) { 0, <Host-number> }
+#   Specified host on this network.  It MUST NOT be sent,
+#   except as a source address as part of an initialization
+#   procedure by which the host learns its full IP address.
+#
+# Older Linux kernels (tested 2.6.32, 3.10) will EINVAL immediately when one
+# executes `ssh 0.1` (or just `ssh 1`). Later Linux kernels (tested 5.5) will
+# at least try to connect
+# (tested with strace, waits for connect(2) to complete).
+# In any way, this code will have special handling for addresses in range
+# 1-99999, 0.1-0.99999 (and e.g. 0.1.2.3 (matches 0.????? and all chars in
+# set [.0-9]) -- ssh persistent connection socket which is found by giving
+# such an ip can be created, with real connection established to another
+# address. (how? see the block with z=`ssh $so -O check "$1" 2>&1` below).
+
+
 za () {
 	case $1 in ( '' | . | *[!.0-9]* | 0.??????* ) return 1
 		;; ( 0.[1-9]* ) ;; ( [1-9]*.* | ??????* ) return 1
@@ -32,19 +48,26 @@ za () {
 
 test $# -ge 3 || {
 	exec >&2; echo
+	case $0 in ./*) n=$0 ;; *) n=${0##*/} ;; esac
 	if za "${1-}"
 	then
-	echo "FIXME: To create ControlPersist execute:"; echo
-	echo "  ${0##*/} $1 time[smhdw] [user@]host [command [args]]"
+	echo "The address '$1' is" '"resolved" as being address in 0.A.B.C'
+	echo "range. Such an address should not be accepted as destination"
+	echo "address (only as source but...). Here the trick is to use such"
+	echo "an address as name to find ssh persistent connection socket."
+	echo
+	echo "Usage to create persistent connection socket:"; echo
+	echo "  $n $1 {time}(s|m|h|d|w) [user@]{host} [command [args]]"
+	echo; echo "E.g.  $n $1 5m 192.168.2.15"
 	echo; echo "Then normal Usage: ${0##*/} $1 [+]{number} {message...}"
-	echo; echo "See  man sshd_config  for time[smhdw] format."
 	else
-	echo "Usage: ${0##*/} {hostname/ipaddr|0.1|1} [+]{number} {message...}"
+	echo "Usage: $n {hostname/ipaddr|0.1|1} [+]{number} {message...}"
 	echo
 	echo "Send sms message via nemomobile device ssh connection."
 	echo "Message editor on the device is opened for confirmation."
 	echo
-	echo "'1','0.1'...: special ControlPersists -- fixme helep..." ''
+	echo "'0.1', '1', '2'...: create/use persistent connection socket..."
+	echo "Execute e.g.  $n 0.333  for more information."
 	fi; echo; exit 1
 }
 
