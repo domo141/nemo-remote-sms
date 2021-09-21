@@ -45,9 +45,9 @@ x_env () { printf '+ %s\n' "$*" >&2; env "$@"; }
 x_eval () { printf '+ %s\n' "$*" >&2; eval "$*"; }
 x_exec () { printf '+ %s\n' "$*" >&2; exec "$@"; die "exec '$*' failed"; }
 
-test $# -ge 3 || die "Usage: $0 [[user]@]host|-|''|. name message..."
-case $1 in '-' ) r=nemo@$rhost
-	;; ''|.) r= # use nemo-sms.sh
+test $# -ge 3 || die "Usage: $0 [[user]@]host|.|''|- name message..."
+case $1 in '.' ) r=nemo@$rhost
+	;; ''|-) r= # use nemo-sms.sh
 	;; 0.* ) r=$1
 	;; [1-9] | [1-9][0-9] | [1-9][0-9][0-9] ) r=$1
 	;; [1-9][0-9][0-9][0-9] | [1-9][0-9][0-9][0-9][0-9] ) r=$1
