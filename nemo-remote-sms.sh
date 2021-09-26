@@ -5,7 +5,7 @@
 #	Copyright (c) 2021 Tomi Ollila
 #
 # Created: Sun 22 Aug 2021 13:29:52 EEST too
-# Last modified: Tue 21 Sep 2021 17:05:54 +0300 too
+# Last modified: Sun 26 Sep 2021 20:26:25 +0300 too
 #
 # SPDX-License-Identifier: 0BSD
 
@@ -19,89 +19,75 @@ die () { printf '%s\n' "$@"; exit 1; } >&2
 # undocumented test option (and use bash/dash/ksh/zsh -x ... to see more)
 test "${1-}" = -n && { arg_test=true; shift; } || arg_test=false
 
-
-# For address block 0.0.0.0/8, rfc6890: Special-Purpose IP Address Registries
-# tells it is "This host on this network" address range. It points to RFC 1122:
-# Requirements for Internet Hosts -- Communication Layers section 3.2.1.3
-# which states:  (b) { 0, <Host-number> }
-#   Specified host on this network.  It MUST NOT be sent,
-#   except as a source address as part of an initialization
-#   procedure by which the host learns its full IP address.
-#
-# Older Linux kernels (tested 2.6.32, 3.10, 4.9) will EINVAL immediately
-# when one executes `ssh 0.1` (or just `ssh 1`).
-# Later Linux kernels (tested 5.5) will at least try to connect
-# (tested with strace, waits for connect(2) to complete).
-# In any way, this code will have special handling for addresses in range
-# 1-99999, 0.1-0.99999 (and e.g. 0.1.2.3 (matches 0.????? and all chars in
-# set [.0-9]) -- ssh persistent connection socket which is found by giving
-# such an ip can be created, with real connection established to another
-# address. (how? see the block with z=`ssh $so -O check "$1" 2>&1` below).
-
-
-za () {
-	case $1 in ( '' | . | *[!.0-9]* | 0.??????* ) return 1
-		;; ( 0.[1-9]* ) ;; ( [1-9]*.* | ??????* ) return 1
+userathost () {
+	case $1 in @*) userathost=${1#?}
+		;; *@*) userathost=$1
+		;; *) userathost=nemo@$1
 	esac
-	return 0
-}
-
-test $# -ge 3 || {
-	exec >&2; echo
-	case $0 in ./*) n=$0 ;; *) n=${0##*/} ;; esac
-	if za "${1-}"
-	then
-	echo "The address '$1' is" '"resolved" as being address in 0.A.B.C/8'
-	echo 'block. RFC 1122 defines such an address as "MUST NOT be sent"...'
-	echo "(but some TCP/IP stacks do...). Here the trick is to use such"
-	echo "an address as name to find ssh persistent connection socket."
-	echo
-	echo "Usage to create persistent connection socket:"; echo
-	echo ":  $n $1 {time}(s|m|h|d|w) [user@]{host} [command [args]]"
-	echo; echo ": E.g.;  $n $1 5m 192.168.2.15"
-	echo; echo "Then normal Usage: ${0##*/} $1 [+]{number} {message...}"
-	else
-	echo "Usage: $n {hostname/ipaddr|0.1|1} [+]{number} {message...}"
-	echo
-	echo "Send sms message via nemomobile device ssh connection."
-	echo "Message editor on the device is opened for confirmation."
-	echo
-	echo ": '0.1', '1', '2'...: create/use persistent connection socket..."
-	echo ": Execute e.g.;  $n 0.333  ;: for more information."
-	fi; echo; exit 1
 }
 
 # better configure ControlPath in ~/.ssh/config, but if not outcomment 2nd line
 so=
 #so=-oControlPath=$XDG_RUNTIME_DIR/ssh-controlpath-%r@%h:%p
 
-if za "$1"
-then	case $2 in *[!0-9]*[smhdw]) # not
-		;; [1-9]*[smhdw])
-			z=`ssh $so -O check "$1" 2>&1` && { echo $z;exit 0; } ||
-			case $z in 'No ControlPath specified'*)
-				echo $z
-				exit 1
-			esac
-			z=${z%)*}; z=${z#*\(}
-			test -e "$z" && rm "$z"
-			so=-oControlPath=$z\ -M\ -oControlPersist=$2
-			case $3 in *@*) userathost=$3
-				;; *) userathost=nemo@$3
-			esac
-			i=$1; shift 3
-			test $# = 0 && set -- echo ": ok ';' ssh $i"
-			echo ssh $so $userathost "$@" >&2
-			exec ssh $so $userathost "$@"
-			exit not reached
-	esac
-	userathost=$1
-else
-	so=
-	case $1 in *@*) userathost=$1
-		;; *) userathost=nemo@$1
-	esac
-fi
+test $# -ge 3 || {
+	exec >&2; echo
+	case $0 in ./*) n=$0 ;; *) n=${0##*/} ;; esac
+	# a subset of "invalid hostnames" -- for this help
+	case ${1-1} in ( '' | [.%]* | *[.%][.%]* | *@[.%]* )
+	echo "The hostname \"$1\" is invalid as an internet host name."
+	echo "Such a name cannot be resolved to an internet address."
+	echo "But it may be used as a name to find (open)ssh persistent"
+	echo "connection socket. The following built-in usage can be used"
+	echo "to create persistent connection socket:"
+	echo
+	echo ":  $n $1 {time}(s|m|h|d|w) [[user]@]{host} [command [args]]"
+	echo
+	echo ": E.g.;  $n $1 5m 192.168.2.15"
+	echo
+	echo "Note that in place of \"$1\" anything ssh accepts works, e.g."
+	echo "valid internet names. \"$1\" was used just to trigger this help."
+	echo
+	echo "Then normal Usage: ${0##*/} $1 [+]{number} message..."
+	test "$so" || { userathost "$1";echo "As well also: ssh $userathost"; }
+	;; *)
+	echo "Usage: $n [[user]@]{hostname/ipaddr|.} [+]{number} message..."
+	echo
+	echo "Send sms message via nemomobile device ssh connection."
+	echo "Message editor on the device is opened for confirmation."
+	echo
+	echo "Plain 'hostname' is changed to 'nemo@hostname', and '@hostname'"
+	echo "just to 'hostname' -- this is to simplify default access..."
+	echo
+	echo ": '.' resembles a \"hostname\" that is not resolvable, but"
+	echo ": (open)ssh can access via existing ControlPath socket."
+	echo ": Execute;  $n .  ;: for more information."
+	esac; echo; exit 1
+}
+
+case $2 in *[!0-9]*[smhdw]) # not a number following [smhdw]
+	;; [1-9]*[smhdw])
+		echo "Checking/creating persistent connection lasting $2"
+		userathost "$1"
+		z=`ssh $so -O check "$userathost" 2>&1` &&
+		{ echo $z; exit 0; } ||
+		case $z in 'No ControlPath specified'*)
+			echo $z
+			exit 1
+		esac
+		z=${z%)*}; z=${z#*\(}
+		test -e "$z" && rm "$z"
+		so=-oControlPath=$z\ -M\ -oControlPersist=$2
+		i=$userathost; userathost "$3"
+		shift 3
+		test $# = 0 && set -- echo ": ok ';' ssh $i"
+		echo ssh $so $userathost "$@" >&2
+		exec ssh $so $userathost "$@"
+		exit not reached
+	# ;; *)
+esac
+
+userathost "$1"
 shift
 
 case $1
